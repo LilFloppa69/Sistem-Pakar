@@ -20,7 +20,7 @@ import Classification from "./pages/Classification";
 import Dataset from "./pages/Dataset";
 import Theory from "./pages/Theory";
 import Results from "./pages/Results";
-// import HistoryPage from "./pages/History";
+import HistoryPage from "./pages/History";
 import About from "./pages/About";
 
 const navItems = [
@@ -66,24 +66,24 @@ export default function App() {
           />
         );
 
-      // case "history":
-      //   return (
-      //     <HistoryPage
-      //       items={history}
-      //       onSelect={(item) => {
-      //         setSelectedResult(item);
-      //         setActive("results");
-      //       }}
-      //       onDelete={(id) => {
-      //         setHistory((old) => old.filter((item) => item.id !== id));
+      case "history":
+        return (
+          <HistoryPage
+            items={history}
+            onSelect={(item) => {
+              setSelectedResult(item);
+              setActive("results");
+            }}
+            onDelete={(id) => {
+              setHistory((old) => old.filter((item) => item.id !== id));
 
-      //         if (selectedResult?.id === id) {
-      //           setSelectedResult(null);
-      //         }
-      //       }}
-      //       onGoClassify={() => setActive("classification")}
-      //     />
-      //   );
+              if (selectedResult?.id === id) {
+                setSelectedResult(null);
+              }
+            }}
+            onGoClassify={() => setActive("classification")}
+          />
+        );
 
       case "about":
         return <About />;
