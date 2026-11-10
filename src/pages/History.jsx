@@ -1,25 +1,19 @@
+import { useState, useEffect } from "react";
 import {
   Activity,
   ArrowRight,
   ChartNoAxesCombined,
   Microscope,
   Info,
-  ShieldCheck,
   FileText,
   FlaskConical,
+  History as HistoryIcon,
+  CheckCircle2,
+  Trash2,
 } from "lucide-react";
 
-const featureLabels = {
-  clump: "Clump Thickness",
-  cellSize: "Uniformity of Cell Size",
-  cellShape: "Uniformity of Cell Shape",
-  adhesion: "Marginal Adhesion",
-  epithelial: "Single Epithelial Cell Size",
-  bareNuclei: "Bare Nuclei",
-  chromatin: "Bland Chromatin",
-  nucleoli: "Normal Nucleoli",
-  mitoses: "Mitoses",
-};
+import SectionTitle from "../components/SectionTitle";
+import { features } from "../data/featureInfo";
 
 function EmptyResults({ onGoClassify }) {
   return (
@@ -29,17 +23,16 @@ function EmptyResults({ onGoClassify }) {
       </div>
 
       <h3 className="text-lg font-bold text-slate-800">
-        No Analysis Available
+        No Analysis History Available
       </h3>
 
       <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-        Belum ada hasil klasifikasi. Silakan lakukan simulasi terlebih dahulu
-        untuk melihat probabilitas dan proses perhitungan Naive Bayes.
+        Belum ada hasil klasifikasi yang tersimpan. Silakan lakukan klasifikasi terlebih dahulu untuk melihat analisis dan probabilitas Naïve Bayes.
       </p>
 
       <button
         onClick={onGoClassify}
-        className="mt-6 inline-flex items-center gap-2 rounded-xl bg-teal-600 px-5 py-3 text-sm font-semibold text-white hover:bg-teal-700"
+        className="mt-6 inline-flex items-center gap-2 rounded-xl bg-teal-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-teal-700"
       >
         Start Classification
         <ArrowRight size={16} />
@@ -49,20 +42,24 @@ function EmptyResults({ onGoClassify }) {
 }
 
 function ProbabilityBar({ label, value, color }) {
+  const numericVal = Number(value) || 0;
+
   return (
     <div>
-      <div className="mb-2 flex justify-between text-sm">
-        <span className="font-medium text-slate-700">{label}</span>
-        <span className="font-bold text-slate-800">
-          {Number(value).toFixed(2)}%
+      <div className="mb-2 flex justify-between text-xs font-semibold">
+        <span className="text-slate-600">{label}</span>
+        <span className="font-mono text-slate-800">
+          {numericVal < 0.0001 && numericVal > 0
+            ? numericVal.toExponential(4)
+            : `${numericVal.toFixed(2)}%`}
         </span>
       </div>
 
-      <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+      <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
         <div
-          className={`h-full rounded-full ${color}`}
+          className={`h-full rounded-full transition-all duration-500 ${color}`}
           style={{
-            width: `${Math.min(100, Math.max(0, Number(value)))}%`,
+            width: `${Math.min(100, Math.max(0, numericVal))}%`,
           }}
         />
       </div>
@@ -70,164 +67,289 @@ function ProbabilityBar({ label, value, color }) {
   );
 }
 
-export default function Results({ result, onGoClassify }) {
-  if (!result) {
+export default function HistoryPage({ items, onSelect, onDelete, onGoClassify }) {
+  const [historyList, setHistoryList] = useState(items || []);
+  const [selectedRecordIndex, setSelectedRecordIndex] = useState(0);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("classification_history");
+    const parsed = saved ? JSON.parse(saved) : [];
+    setHistoryList(items && items.length > 0 ? items : parsed);
+  }, [items]);
+
+  const handleClearHistory = () => {
+    localStorage.removeItem("classification_history");
+    setHistoryList([]);
+  };
+
+  const handleDeleteItem = (e, id) => {
+    e.stopPropagation();
+    if (onDelete) {
+      onDelete(id);
+    } else {
+      const updated = historyList.filter((item) => item.id !== id);
+      setHistoryList(updated);
+      localStorage.setItem("classification_history", JSON.stringify(updated));
+    }
+  };
+
+  if (historyList.length === 0) {
     return (
       <div>
-        <div className="mb-6">
-          <p className="mb-2 text-xs font-bold uppercase tracking-[2px] text-teal-600">
-            Analysis
-          </p>
-          <h2 className="text-2xl font-bold text-slate-800">Analysis Result</h2>
-          <p className="mt-2 text-sm text-slate-500">
-            Hasil klasifikasi dan interpretasi probabilitas.
-          </p>
-        </div>
-
+        <SectionTitle
+          eyebrow="Patient classification"
+          title="Analysis History & Result"
+          desc="Hasil klasifikasi dan interpretasi probabilitas berbasis Naïve Bayes Classifier."
+        />
         <EmptyResults onGoClassify={onGoClassify} />
       </div>
     );
   }
 
-  const probabilities = result.probabilities || {};
-  const benign = Number(probabilities.benign || 0);
-  const malignant = Number(probabilities.malignant || 0);
-  const isMalignant = result.prediction === "Malignant";
+  const currentResult = historyList[selectedRecordIndex] || historyList[0];
+
+  const isMalignant =
+    currentResult.predictedClass === "Ganas" ||
+    currentResult.prediction === "Malignant" ||
+    currentResult.prediction === "Ganas";
+
+  const posteriorJinak =
+    currentResult.probabilities?.benign ?? currentResult.posterior?.jinak ?? 0;
+  const posteriorGanas =
+    currentResult.probabilities?.malignant ?? currentResult.posterior?.ganas ?? 0;
+
+  const inputValues = currentResult.input || currentResult.values || {};
 
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="mb-2 text-xs font-bold uppercase tracking-[2px] text-teal-600">
-          Analysis
-        </p>
-        <h2 className="text-2xl font-bold text-slate-800">Analysis Result</h2>
-        <p className="mt-2 text-sm text-slate-500">
-          Ringkasan hasil klasifikasi berdasarkan karakteristik sel.
-        </p>
-      </div>
+    <div>
+      <SectionTitle
+        eyebrow="Patient classification"
+        title="Analysis History & Result"
+        desc="Hasil klasifikasi dan interpretasi probabilitas berbasis Naïve Bayes Classifier."
+      />
 
-      <div
-        className={`rounded-2xl p-6 text-white ${
-          isMalignant ? "bg-rose-700" : "bg-teal-700"
-        }`}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-white/70">
-              Classification Prediction
+      <div className="grid items-start gap-6 xl:grid-cols-3">
+        {/* Kolom Kiri: Detail Rekam Klasifikasi Terpilih */}
+        <div className="space-y-6 xl:col-span-2">
+          <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Microscope className="text-teal-600" size={20} />
+                  <h3 className="font-bold text-slate-800">Diagnosis Outcome</h3>
+                </div>
+                <p className="mt-1 text-xs text-slate-400">
+                  Hasil pengujian sampel berdasarkan Naïve Bayes Classifier.
+                </p>
+              </div>
+
+              <span
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                  isMalignant
+                    ? "bg-rose-50 text-rose-700"
+                    : "bg-teal-50 text-teal-700"
+                }`}
+              >
+                ID: {currentResult.id || "REC-" + Date.now().toString().slice(-4)}
+              </span>
+            </div>
+
+            <div
+              className={`rounded-2xl p-6 text-white ${
+                isMalignant ? "bg-rose-600" : "bg-teal-600"
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-white/80">
+                    Hasil Klasifikasi
+                  </p>
+                  <h3 className="mt-1 text-3xl font-black">
+                    KANKER {isMalignant ? "GANAS" : "JINAK"}
+                  </h3>
+                  <p className="mt-2 text-xs text-white/80">
+                    {isMalignant
+                      ? "Sampel sel diidentifikasi memiliki karakteristik tingkat keganasan tinggi (Malignant)."
+                      : "Sampel sel diidentifikasi cenderung bersifat jinak/non-kanker (Benign)."}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-white/15 p-4 text-white">
+                  <Activity size={32} />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 space-y-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Probabilitas Posterior
+              </h4>
+
+              <ProbabilityBar
+                label="Klasifikasi Jinak (Benign)"
+                value={posteriorJinak}
+                color="bg-teal-500"
+              />
+              <ProbabilityBar
+                label="Klasifikasi Ganas (Malignant)"
+                value={posteriorGanas}
+                color="bg-rose-500"
+              />
+            </div>
+          </section>
+
+          {/* Input Characteristics Grid */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <div className="mb-6 flex items-center justify-between border-b border-slate-100 pb-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <FlaskConical className="text-teal-600" size={20} />
+                  <h3 className="font-bold text-slate-800">
+                    Input Characteristics
+                  </h3>
+                </div>
+                <p className="mt-1 text-xs text-slate-400">
+                  Rincian 9 atribut sel yang dimasukkan.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              {features.map((feature) => (
+                <div
+                  key={feature.key}
+                  className="rounded-xl border border-slate-100 bg-slate-50 p-3.5"
+                >
+                  <span className="text-[11px] font-medium text-slate-400">
+                    {feature.name}
+                  </span>
+                  <div className="mt-1 flex items-baseline justify-between">
+                    <span className="text-lg font-bold text-slate-800">
+                      {inputValues[feature.key] ?? "—"}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      Skala {feature.scale}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        {/* Kolom Kanan: Saved History List */}
+        <div className="space-y-5">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5">
+            <div className="mb-5 flex items-center gap-2">
+              <FileText className="text-teal-600" size={19} />
+              <h3 className="font-bold text-slate-800">Execution Info</h3>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="flex justify-between gap-3 border-b border-slate-50 pb-2">
+                <span className="text-slate-500">Metode</span>
+                <span className="font-bold text-slate-700">Naïve Bayes</span>
+              </div>
+              <div className="flex justify-between gap-3 border-b border-slate-50 pb-2">
+                <span className="text-slate-500">Waktu</span>
+                <span className="font-bold text-slate-700">
+                  {currentResult.createdAt || new Date().toLocaleDateString()}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-slate-500">Status</span>
+                <span className="flex items-center gap-1 font-bold text-teal-600">
+                  <CheckCircle2 size={14} /> Processed
+                </span>
+              </div>
+            </div>
+          </section>
+
+          {/* List Riwayat Terpantau dari Local Storage */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <HistoryIcon className="text-teal-600" size={19} />
+                <h3 className="font-bold text-slate-800">Saved History</h3>
+              </div>
+              <button
+                onClick={handleClearHistory}
+                title="Hapus Semua Riwayat"
+                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+
+            <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
+              {historyList.map((item, index) => {
+                const itemMalignant =
+                  item.predictedClass === "Ganas" ||
+                  item.prediction === "Malignant" ||
+                  item.prediction === "Ganas";
+
+                return (
+                  <div
+                    key={item.id || index}
+                    onClick={() => {
+                      setSelectedRecordIndex(index);
+                      if (onSelect) onSelect(item);
+                    }}
+                    className={`flex items-center justify-between rounded-xl border p-3 cursor-pointer transition ${
+                      selectedRecordIndex === index
+                        ? "border-teal-500 bg-teal-50/50 ring-1 ring-teal-500"
+                        : "border-slate-100 bg-slate-50 hover:bg-slate-100"
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="font-bold text-slate-700">
+                          {item.id}
+                        </span>
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                            itemMalignant
+                              ? "bg-rose-100 text-rose-700"
+                              : "bg-teal-100 text-teal-700"
+                          }`}
+                        >
+                          {itemMalignant ? "GANAS" : "JINAK"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[10px] text-slate-400">
+                        {item.createdAt || "Baru saja"}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={(e) => handleDeleteItem(e, item.id)}
+                      className="text-slate-400 hover:text-rose-600 p-1"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <ChartNoAxesCombined className="text-teal-600" size={19} />
+              <h3 className="font-bold text-slate-800">Klasifikasi Baru</h3>
+            </div>
+            <p className="text-xs leading-5 text-slate-500">
+              Ingin melakukan pengujian pada sampel pasien lain?
             </p>
-            <h3 className="mt-2 text-3xl font-bold">{result.prediction}</h3>
-            <p className="mt-2 text-sm text-white/80">
-              {isMalignant
-                ? "Prediksi kelas Malignant (4)"
-                : "Prediksi kelas Benign (2)"}
-            </p>
-          </div>
-
-          <div className="rounded-2xl bg-white/15 p-4">
-            <Microscope size={36} />
-          </div>
+            <button
+              onClick={onGoClassify}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 py-2.5 text-xs font-semibold text-white transition hover:bg-teal-700"
+            >
+              Ke Form Klasifikasi
+              <ArrowRight size={14} />
+            </button>
+          </section>
         </div>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <section className="rounded-2xl border border-slate-200 bg-white p-6">
-          <div className="mb-6 flex items-center gap-2">
-            <ChartNoAxesCombined className="text-teal-600" size={20} />
-            <h3 className="font-bold text-slate-800">Posterior Probability</h3>
-          </div>
-
-          <div className="space-y-6">
-            <ProbabilityBar
-              label="Benign (2)"
-              value={benign}
-              color="bg-teal-500"
-            />
-            <ProbabilityBar
-              label="Malignant (4)"
-              value={malignant}
-              color="bg-rose-500"
-            />
-          </div>
-
-          <p className="mt-6 text-xs leading-5 text-slate-400">
-            Probabilitas merupakan hasil perhitungan model, bukan ukuran
-            kepastian diagnosis medis.
-          </p>
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-6">
-          <div className="mb-5 flex items-center gap-2">
-            <FileText className="text-teal-600" size={20} />
-            <h3 className="font-bold text-slate-800">
-              Classification Information
-            </h3>
-          </div>
-
-          <div className="space-y-4 text-sm">
-            <div className="flex justify-between gap-3">
-              <span className="text-slate-500">Record ID</span>
-              <span className="font-semibold text-slate-700">
-                {result.id || "—"}
-              </span>
-            </div>
-
-            <div className="flex justify-between gap-3">
-              <span className="text-slate-500">Date</span>
-              <span className="font-semibold text-slate-700">
-                {result.createdAt || "—"}
-              </span>
-            </div>
-
-            <div className="flex justify-between gap-3">
-              <span className="text-slate-500">Method</span>
-              <span className="font-semibold text-slate-700">Naive Bayes</span>
-            </div>
-
-            <div className="flex justify-between gap-3">
-              <span className="text-slate-500">Status</span>
-              <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-700">
-                Completed
-              </span>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-6">
-        <div className="mb-5 flex items-center gap-2">
-          <FlaskConical className="text-teal-600" size={20} />
-          <h3 className="font-bold text-slate-800">Input Characteristics</h3>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {Object.entries(featureLabels).map(([key, label]) => (
-            <div key={key} className="rounded-xl bg-slate-50 p-4">
-              <p className="text-xs text-slate-500">{label}</p>
-              <p className="mt-2 text-lg font-bold text-slate-800">
-                {result.input?.[key] ?? "—"}
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {result.calculation && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-6">
-          <h3 className="mb-4 font-bold text-slate-800">Calculation Details</h3>
-          <pre className="overflow-x-auto rounded-xl bg-slate-950 p-4 text-xs leading-6 text-teal-200">
-            {JSON.stringify(result.calculation, null, 2)}
-          </pre>
-        </section>
-      )}
-
-      <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
-        <Info className="mt-0.5 shrink-0 text-amber-600" size={18} />
-        <p className="text-xs leading-6 text-amber-800">
-          Hasil ini merupakan klasifikasi akademik berdasarkan dataset
-          penelitian. Bukan diagnosis medis dan tidak menggantikan pemeriksaan
-          dokter.
-        </p>
       </div>
     </div>
   );

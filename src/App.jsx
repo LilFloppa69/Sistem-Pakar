@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 import {
   LayoutDashboard,
@@ -37,12 +37,35 @@ export default function App() {
   const [active, setActive] = useState("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Frontend state: belum ada algoritma klasifikasi.
   const [values, setValues] = useState({ ...initialForm });
 
-  // Akan diisi setelah algoritma diintegrasikan.
-  const [history, setHistory] = useState([]);
+  // 1. Inisialisasi History dari localStorage
+  const [history, setHistory] = useState(() => {
+    const saved = localStorage.getItem("classification_history");
+    return saved ? JSON.parse(saved) : [];
+  });
+  
   const [selectedResult, setSelectedResult] = useState(null);
+
+  // Sync state history ke LocalStorage setiap kali history berubah
+  useEffect(() => {
+    localStorage.setItem("classification_history", JSON.stringify(history));
+  }, [history]);
+
+  // Fungsi simpan history dari form klasifikasi
+  const handleSaveHistory = (newResult) => {
+    setSelectedResult(newResult);
+    setHistory((prev) => {
+      const exists = prev.some((item) => item.id === newResult.id);
+      return exists ? prev : [newResult, ...prev];
+    });
+  };
+
+  // Navigasi saat mengeklik tombol "Lihat Detail" di Classification
+  const handleViewDetails = (resultData) => {
+    handleSaveHistory(resultData);
+    setActive("results");
+  };
 
   function renderPage() {
     switch (active) {
@@ -50,7 +73,14 @@ export default function App() {
         return <Dashboard setActive={setActive} />;
 
       case "classification":
-        return <Classification values={values} setValues={setValues} />;
+        return (
+          <Classification
+            values={values}
+            setValues={setValues}
+            onViewDetails={handleViewDetails}
+            onSaveHistory={handleSaveHistory}
+          />
+        );
 
       case "dataset":
         return <Dataset />;
@@ -61,7 +91,7 @@ export default function App() {
       case "results":
         return (
           <Results
-            result={selectedResult}
+            result={selectedResult || history[0]}
             onGoClassify={() => setActive("classification")}
           />
         );
@@ -76,7 +106,6 @@ export default function App() {
             }}
             onDelete={(id) => {
               setHistory((old) => old.filter((item) => item.id !== id));
-
               if (selectedResult?.id === id) {
                 setSelectedResult(null);
               }

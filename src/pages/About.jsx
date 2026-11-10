@@ -20,24 +20,24 @@ const teamMembers = [
   },
   {
     name: "Achmad Hadi Rasyid",
-    role: "Machine Learning Engineer",
+    role: "Machine Learning Engineer/ Human :)",
     image: null,
     initials: "SHIO",
   },
   {
-    name: "Nama Anggota 2",
+    name: "Gabe Try Amanda Lubis ",
     role: "Techincal Writer/Case Study Researcher",
     image: null,
     initials: "A2",
   },
   {
-    name: "Nama Anggota 3",
+    name: "Jesyca Gracela Sitinjak",
     role: "Quality Assurance Tester",
     image: null,
     initials: "A3",
   },
   {
-    name: "Nama Anggota 4",
+    name: "Andira syifanny",
     role: "Techincal Writer",
     image: null,
     initials: "A4",

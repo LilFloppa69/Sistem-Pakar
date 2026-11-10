@@ -4,9 +4,10 @@ import {
   ChartNoAxesCombined,
   Microscope,
   Info,
-  ShieldCheck,
   FileText,
   FlaskConical,
+  Calculator,
+  Layers,
 } from "lucide-react";
 
 const featureLabels = {
@@ -93,6 +94,7 @@ export default function Results({ result, onGoClassify }) {
   const benign = Number(probabilities.benign || 0);
   const malignant = Number(probabilities.malignant || 0);
   const isMalignant = result.prediction === "Malignant";
+  const calc = result.calculation;
 
   return (
     <div className="space-y-6">
@@ -102,10 +104,11 @@ export default function Results({ result, onGoClassify }) {
         </p>
         <h2 className="text-2xl font-bold text-slate-800">Analysis Result</h2>
         <p className="mt-2 text-sm text-slate-500">
-          Ringkasan hasil klasifikasi berdasarkan karakteristik sel.
+          Ringkasan hasil klasifikasi dan rincian iterasi matematis Naïve Bayes.
         </p>
       </div>
 
+      {/* Hero Prediction Status */}
       <div
         className={`rounded-2xl p-6 text-white ${
           isMalignant ? "bg-rose-700" : "bg-teal-700"
@@ -119,8 +122,8 @@ export default function Results({ result, onGoClassify }) {
             <h3 className="mt-2 text-3xl font-bold">{result.prediction}</h3>
             <p className="mt-2 text-sm text-white/80">
               {isMalignant
-                ? "Prediksi kelas Malignant (4)"
-                : "Prediksi kelas Benign (2)"}
+                ? "Prediksi kelas Malignant (Ganas)"
+                : "Prediksi kelas Benign (Jinak)"}
             </p>
           </div>
 
@@ -130,6 +133,7 @@ export default function Results({ result, onGoClassify }) {
         </div>
       </div>
 
+      {/* Probabilitas & Metadata */}
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="rounded-2xl border border-slate-200 bg-white p-6">
           <div className="mb-6 flex items-center gap-2">
@@ -139,19 +143,19 @@ export default function Results({ result, onGoClassify }) {
 
           <div className="space-y-6">
             <ProbabilityBar
-              label="Benign (2)"
+              label="Benign (Jinak)"
               value={benign}
               color="bg-teal-500"
             />
             <ProbabilityBar
-              label="Malignant (4)"
+              label="Malignant (Ganas)"
               value={malignant}
               color="bg-rose-500"
             />
           </div>
 
           <p className="mt-6 text-xs leading-5 text-slate-400">
-            Probabilitas merupakan hasil perhitungan model, bukan ukuran
+            Probabilitas merupakan hasil perhitungan model Naïve Bayes, bukan ukuran
             kepastian diagnosis medis.
           </p>
         </section>
@@ -167,7 +171,7 @@ export default function Results({ result, onGoClassify }) {
           <div className="space-y-4 text-sm">
             <div className="flex justify-between gap-3">
               <span className="text-slate-500">Record ID</span>
-              <span className="font-semibold text-slate-700">
+              <span className="font-semibold text-slate-700 font-mono">
                 {result.id || "—"}
               </span>
             </div>
@@ -181,7 +185,7 @@ export default function Results({ result, onGoClassify }) {
 
             <div className="flex justify-between gap-3">
               <span className="text-slate-500">Method</span>
-              <span className="font-semibold text-slate-700">Naive Bayes</span>
+              <span className="font-semibold text-slate-700">Naive Bayes Classifier</span>
             </div>
 
             <div className="flex justify-between gap-3">
@@ -194,6 +198,7 @@ export default function Results({ result, onGoClassify }) {
         </section>
       </div>
 
+      {/* Input Characteristics */}
       <section className="rounded-2xl border border-slate-200 bg-white p-6">
         <div className="mb-5 flex items-center gap-2">
           <FlaskConical className="text-teal-600" size={20} />
@@ -204,7 +209,7 @@ export default function Results({ result, onGoClassify }) {
           {Object.entries(featureLabels).map(([key, label]) => (
             <div key={key} className="rounded-xl bg-slate-50 p-4">
               <p className="text-xs text-slate-500">{label}</p>
-              <p className="mt-2 text-lg font-bold text-slate-800">
+              <p className="mt-2 text-lg font-bold text-slate-800 font-mono">
                 {result.input?.[key] ?? "—"}
               </p>
             </div>
@@ -212,15 +217,98 @@ export default function Results({ result, onGoClassify }) {
         </div>
       </section>
 
-      {result.calculation && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-6">
-          <h3 className="mb-4 font-bold text-slate-800">Calculation Details</h3>
-          <pre className="overflow-x-auto rounded-xl bg-slate-950 p-4 text-xs leading-6 text-teal-200">
-            {JSON.stringify(result.calculation, null, 2)}
-          </pre>
-        </section>
+      {/* Perhitungan Rinci & Iterasi Likelihood */}
+      {calc && (
+        <div className="space-y-6">
+          {/* Prior Probability */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <Layers className="text-teal-600" size={20} />
+              <h3 className="font-bold text-slate-800">1. Prior Probability P(V_j)</h3>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-3 text-xs">
+              <div className="rounded-xl bg-slate-50 p-4">
+                <span className="text-slate-500">Total Dataset</span>
+                <p className="mt-1 text-base font-bold text-slate-800">{calc.prior?.totalData} record</p>
+              </div>
+              <div className="rounded-xl bg-emerald-50 p-4 border border-emerald-100">
+                <span className="text-emerald-700 font-medium">P(Jinak)</span>
+                <p className="mt-1 text-base font-bold text-emerald-900">
+                  {(calc.prior?.jinak * 100).toFixed(2)}%
+                </p>
+                <p className="mt-0.5 text-[10px] text-emerald-600">({calc.prior?.totalJinak} / {calc.prior?.totalData})</p>
+              </div>
+              <div className="rounded-xl bg-rose-50 p-4 border border-rose-100">
+                <span className="text-rose-700 font-medium">P(Ganas)</span>
+                <p className="mt-1 text-base font-bold text-rose-900">
+                  {(calc.prior?.ganas * 100).toFixed(2)}%
+                </p>
+                <p className="mt-0.5 text-[10px] text-rose-600">({calc.prior?.totalGanas} / {calc.prior?.totalData})</p>
+              </div>
+            </div>
+          </section>
+
+          {/* Tabel Likelihood Iterasi Atribut */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Calculator className="text-teal-600" size={20} />
+                <h3 className="font-bold text-slate-800">
+                  2. Iterasi Likelihood Atribut P(a_i | V_j)
+                </h3>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">Atribut (a_i)</th>
+                    <th className="py-3 px-4 text-center">Nilai Input</th>
+                    <th className="py-3 px-4">P(a_i | Jinak)</th>
+                    <th className="py-3 px-4">P(a_i | Ganas)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-mono">
+                  {Object.keys(featureLabels).map((key) => (
+                    <tr key={key} className="hover:bg-slate-50/50">
+                      <td className="py-3 px-4 font-sans font-medium text-slate-700">
+                        {featureLabels[key]}
+                      </td>
+                      <td className="py-3 px-4 text-center font-bold text-teal-700">
+                        {result.input?.[key]}
+                      </td>
+                      <td className="py-3 px-4 text-slate-600">
+                        {calc.likelihood?.jinak[key]?.toFixed(6)}
+                      </td>
+                      <td className="py-3 px-4 text-slate-600">
+                        {calc.likelihood?.ganas[key]?.toFixed(6)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Posterior Likelihood Raw Product */}
+            <div className="mt-6 rounded-xl bg-slate-900 p-4 text-xs text-slate-200 space-y-2 font-mono">
+              <p className="text-teal-400 font-sans font-bold">
+                3. Raw Posterior Product V_map = P(V_j) * ∏ P(a_i | V_j):
+              </p>
+              <div className="flex justify-between border-b border-slate-800 pb-1">
+                <span className="text-slate-400">V_map (Jinak):</span>
+                <span>{calc.posteriorRaw?.jinak?.toExponential(6)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">V_map (Ganas):</span>
+                <span>{calc.posteriorRaw?.ganas?.toExponential(6)}</span>
+              </div>
+            </div>
+          </section>
+        </div>
       )}
 
+      {/* Disclaimer */}
       <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
         <Info className="mt-0.5 shrink-0 text-amber-600" size={18} />
         <p className="text-xs leading-6 text-amber-800">
