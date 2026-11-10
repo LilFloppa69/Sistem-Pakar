@@ -17,30 +17,35 @@ const teamMembers = [
     role: "Project Leader/Frontend Developer",
     image: null,
     initials: "YN",
+    nirm: "2026020111",
   },
   {
     name: "Achmad Hadi Rasyid",
     role: "Machine Learning Engineer/ Human :)",
     image: null,
     initials: "SHIO",
+    nirm: "2026020166",
   },
   {
     name: "Gabe Try Amanda Lubis ",
-    role: "Techincal Writer/Case Study Researcher",
+    role: "Techincal Writer/Quality Assurance Tester",
     image: null,
-    initials: "A2",
+    initials: "GABE",
+    nirm: "2024020085",
   },
   {
     name: "Jesyca Gracela Sitinjak",
-    role: "Quality Assurance Tester",
+    role: "Technical Writer/Case Study Researcher",
     image: null,
-    initials: "A3",
+    initials: "JES",
+    nirm: "2024020351",
   },
   {
-    name: "Andira syifanny",
+    name: "Andira Syifanny",
     role: "Techincal Writer",
     image: null,
-    initials: "A4",
+    initials: "DIRA",
+    nirm: "2024020092",
   },
 ];
 
@@ -275,7 +280,7 @@ export default function About() {
                 {member.image ? (
                   <img
                     src={member.image}
-                    alt={member.name}
+                    alt={`${member.name} - ${member.nirm}`}
                     className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
                   />
                 ) : (
@@ -284,8 +289,9 @@ export default function About() {
                       {member.initials}
                     </div>
 
-                    <p className="mt-4 text-xs font-medium text-slate-400">
-                      Member Photo
+                    <p className="mt-4 text-xs font-medium text-slate-400 items-center justify-center text-center">
+                      Unfortunately the members are camera-shy, so it's a blank
+                      circle
                     </p>
                   </div>
                 )}
@@ -298,7 +304,7 @@ export default function About() {
                 </p>
 
                 <h3 className="mt-2 text-sm font-bold text-slate-800">
-                  {member.name}
+                  {member.name} - {member.nirm}
                 </h3>
 
                 <p className="mt-1 text-xs text-slate-500">{member.role}</p>
