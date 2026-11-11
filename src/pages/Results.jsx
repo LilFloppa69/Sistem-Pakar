@@ -53,17 +53,22 @@ function EmptyResults({ onGoClassify }) {
 }
 
 function ProbabilityBar({ label, value, color, rawValue }) {
+  const numericValue = Number(value);
+  const safeValue = Number.isFinite(numericValue) ? numericValue : 0;
+
   return (
     <div className="space-y-1.5">
       <div className="flex justify-between items-center text-sm">
         <span className="font-semibold text-slate-700">{label}</span>
+
         <div className="text-right">
           <span className="font-bold text-slate-900 font-mono">
-            {Number(value).toFixed(4)}%
+            {safeValue.toFixed(6)}%
           </span>
+
           {rawValue !== undefined && (
             <span className="block text-[11px] text-slate-400 font-mono">
-              (Raw: {Number(rawValue).toExponential(4)})
+              Raw Posterior: {Number(rawValue).toExponential(12)}
             </span>
           )}
         </div>
@@ -73,7 +78,7 @@ function ProbabilityBar({ label, value, color, rawValue }) {
         <div
           className={`h-full rounded-full transition-all duration-500 ${color}`}
           style={{
-            width: `${Math.min(100, Math.max(0, Number(value)))}%`,
+            width: `${Math.min(100, Math.max(0, safeValue))}%`,
           }}
         />
       </div>
@@ -117,7 +122,8 @@ export default function Results({ result, onGoClassify }) {
           Hasil Klasifikasi & Perhitungan Detail
         </h2>
         <p className="mt-1 text-sm text-slate-500">
-          Laporan rinci hasil prediksi beserta pembuktian langkah matematis algoritma Naïve Bayes.
+          Laporan rinci hasil prediksi beserta pembuktian langkah matematis
+          algoritma Naïve Bayes.
         </p>
       </div>
 
@@ -135,11 +141,19 @@ export default function Results({ result, onGoClassify }) {
               Hasil Diagnosis Model
             </span>
             <h3 className="mt-2 text-4xl font-extrabold tracking-tight">
-              {result.prediction === "Malignant" ? "Malignant (Ganas)" : "Benign (Jinak)"}
+              {result.prediction === "Malignant"
+                ? "Malignant (Ganas)"
+                : "Benign (Jinak)"}
             </h3>
             <p className="mt-2 text-sm text-white/90 max-w-xl leading-relaxed">
-              Berdasarkan probabilitas posterior tertinggi (<i>V_map</i>), sampel diprediksi masuk ke dalam kategori{" "}
-              <strong>{isMalignant ? "Kanker Ganas (Malignant)" : "Kanker Jinak (Benign)"}</strong>.
+              Berdasarkan probabilitas posterior tertinggi (<i>V_map</i>),
+              sampel diprediksi masuk ke dalam kategori{" "}
+              <strong>
+                {isMalignant
+                  ? "Kanker Ganas (Malignant)"
+                  : "Kanker Jinak (Benign)"}
+              </strong>
+              .
             </p>
           </div>
 
@@ -183,8 +197,12 @@ export default function Results({ result, onGoClassify }) {
           <div className="mt-6 rounded-xl bg-slate-50 p-3 text-xs text-slate-500 flex items-start gap-2">
             <Info size={16} className="text-slate-400 shrink-0 mt-0.5" />
             <span>
-              Persentase di atas dihitung dengan meng-normalisasi nilai perkalian posterior raw:{" "}
-              <code className="font-mono bg-slate-200/60 px-1 rounded">P(C) / ∑ P(C_all)</code>.
+              Persentase di atas dihitung dengan meng-normalisasi nilai
+              perkalian posterior raw:{" "}
+              <code className="font-mono bg-slate-200/60 px-1 rounded">
+                P(C) / ∑ P(C_all)
+              </code>
+              .
             </span>
           </div>
         </section>
@@ -246,7 +264,9 @@ export default function Results({ result, onGoClassify }) {
               Karakteristik Atribut Input (9 Atribut WBC)
             </h3>
           </div>
-          <span className="text-xs font-medium text-slate-400">Skala Nilai: 1 - 10</span>
+          <span className="text-xs font-medium text-slate-400">
+            Skala Nilai: 1 - 10
+          </span>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -259,7 +279,9 @@ export default function Results({ result, onGoClassify }) {
               >
                 <div>
                   <p className="text-xs font-medium text-slate-500">{label}</p>
-                  <p className="text-xs font-mono text-slate-400 font-semibold">{key}</p>
+                  <p className="text-xs font-mono text-slate-400 font-semibold">
+                    {key}
+                  </p>
                 </div>
                 <span className="text-lg font-extrabold text-teal-700 font-mono bg-white px-3 py-1 rounded-lg border border-slate-200 shadow-xs">
                   {val ?? "—"}
@@ -296,30 +318,46 @@ export default function Results({ result, onGoClassify }) {
 
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="rounded-xl bg-slate-50 p-4 border border-slate-200">
-                <span className="text-xs font-medium text-slate-500">Total Data Training</span>
+                <span className="text-xs font-medium text-slate-500">
+                  Total Data Training
+                </span>
                 <p className="mt-1 text-2xl font-bold text-slate-800 font-mono">
                   {calc.prior?.totalData || 0}
                 </p>
-                <p className="mt-1 text-[11px] text-slate-400">Total Sampel Observasi</p>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Total Sampel Observasi
+                </p>
               </div>
 
               <div className="rounded-xl bg-teal-50/60 p-4 border border-teal-100">
-                <span className="text-xs font-semibold text-teal-700">P(Jinak / Benign)</span>
+                <span className="text-xs font-semibold text-teal-700">
+                  P(Jinak / Benign)
+                </span>
                 <p className="mt-1 text-2xl font-bold text-teal-900 font-mono">
-                  {calc.prior?.jinak !== undefined ? (calc.prior.jinak * 100).toFixed(4) : 0}%
+                  {calc.prior?.jinak !== undefined
+                    ? (calc.prior.jinak * 100).toFixed(4)
+                    : 0}
+                  %
                 </p>
                 <p className="mt-1 text-xs text-teal-700 font-mono">
-                  = {calc.prior?.totalJinak || 0} / {calc.prior?.totalData || 0} = {calc.prior?.jinak?.toFixed(6)}
+                  = {calc.prior?.totalJinak || 0} / {calc.prior?.totalData || 0}{" "}
+                  = {calc.prior?.jinak?.toFixed(6)}
                 </p>
               </div>
 
               <div className="rounded-xl bg-rose-50/60 p-4 border border-rose-100">
-                <span className="text-xs font-semibold text-rose-700">P(Ganas / Malignant)</span>
+                <span className="text-xs font-semibold text-rose-700">
+                  P(Ganas / Malignant)
+                </span>
                 <p className="mt-1 text-2xl font-bold text-rose-900 font-mono">
-                  {calc.prior?.ganas !== undefined ? (calc.prior.ganas * 100).toFixed(4) : 0}%
+                  {calc.prior?.ganas !== undefined
+                    ? (calc.prior.ganas * 100).toFixed(4)
+                    : 0}
+                  %
                 </p>
                 <p className="mt-1 text-xs text-rose-700 font-mono">
-                  = {calc.prior?.totalGanas || 0} / {calc.prior?.totalData || 0} = {calc.prior?.ganas?.toFixed(6)}
+                  = {calc.prior?.totalGanas || 0} / {calc.prior?.totalData || 0}{" "}
+                  = {calc.prior?.ganas?.toFixed(6)}
                 </p>
               </div>
             </div>
@@ -336,7 +374,8 @@ export default function Results({ result, onGoClassify }) {
                   </code>
                 </h4>
                 <p className="mt-1 text-xs text-slate-500">
-                  Menghitung peluang kemunculan nilai atribut input pada masing-masing kelas target.
+                  Menghitung peluang kemunculan nilai atribut input pada
+                  masing-masing kelas target.
                 </p>
               </div>
             </div>
@@ -346,7 +385,9 @@ export default function Results({ result, onGoClassify }) {
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 font-semibold uppercase tracking-wider border-b border-slate-200">
                     <th className="py-3 px-4">Nama Atribut (a_i)</th>
-                    <th className="py-3 px-4 text-center bg-teal-50/50 text-teal-800">Nilai Input</th>
+                    <th className="py-3 px-4 text-center bg-teal-50/50 text-teal-800">
+                      Nilai Input
+                    </th>
                     <th className="py-3 px-4">Kemunculan (Jinak)</th>
                     <th className="py-3 px-4 font-mono">P(a_i | Jinak)</th>
                     <th className="py-3 px-4">Kemunculan (Ganas)</th>
@@ -356,31 +397,70 @@ export default function Results({ result, onGoClassify }) {
                 <tbody className="divide-y divide-slate-100">
                   {Object.keys(featureLabels).map((key) => {
                     const valInput = result.input?.[key];
-                    const countJinak = calc.details?.jinakCounts?.[key];
-                    const countGanas = calc.details?.ganasCounts?.[key];
-                    const probJinak = calc.likelihood?.jinak?.[key];
-                    const probGanas = calc.likelihood?.ganas?.[key];
+
+                    const detailJinak = calc.likelihoodDetails?.[key]?.jinak;
+                    const detailGanas = calc.likelihoodDetails?.[key]?.ganas;
+
+                    const countJinak = detailJinak?.frequency;
+                    const countGanas = detailGanas?.frequency;
+
+                    const probJinak =
+                      detailJinak?.probability ?? calc.likelihood?.jinak?.[key];
+
+                    const probGanas =
+                      detailGanas?.probability ?? calc.likelihood?.ganas?.[key];
 
                     return (
-                      <tr key={key} className="hover:bg-slate-50/80 transition-colors">
+                      <tr
+                        key={key}
+                        className="hover:bg-slate-50/80 transition-colors"
+                      >
                         <td className="py-3 px-4 font-semibold text-slate-700 font-sans">
                           {featureLabels[key]}
-                          <span className="block text-[10px] font-mono font-normal text-slate-400">{key}</span>
+                          <span className="block text-[10px] font-mono font-normal text-slate-400">
+                            {key}
+                          </span>
                         </td>
                         <td className="py-3 px-4 text-center font-bold text-teal-700 bg-teal-50/30 font-mono text-sm">
                           {valInput}
                         </td>
+
                         <td className="py-3 px-4 text-slate-500 font-mono">
-                          {countJinak !== undefined ? `${countJinak} / ${calc.prior?.totalJinak}` : "—"}
+                          {countJinak !== undefined
+                            ? `${countJinak} / ${calc.prior?.totalJinak}`
+                            : "—"}
                         </td>
+
                         <td className="py-3 px-4 font-mono font-semibold text-teal-700">
-                          {probJinak !== undefined ? probJinak.toFixed(6) : "—"}
+                          {probJinak !== undefined
+                            ? Number(probJinak).toPrecision(12)
+                            : "—"}
+
+                          {detailJinak && (
+                            <span className="block text-[10px] font-normal text-slate-400">
+                              {detailJinak.numerator} /{" "}
+                              {detailJinak.denominator}
+                            </span>
+                          )}
                         </td>
+
                         <td className="py-3 px-4 text-slate-500 font-mono">
-                          {countGanas !== undefined ? `${countGanas} / ${calc.prior?.totalGanas}` : "—"}
+                          {countGanas !== undefined
+                            ? `${countGanas} / ${calc.prior?.totalGanas}`
+                            : "—"}
                         </td>
+
                         <td className="py-3 px-4 font-mono font-semibold text-rose-700">
-                          {probGanas !== undefined ? probGanas.toFixed(6) : "—"}
+                          {probGanas !== undefined
+                            ? Number(probGanas).toPrecision(12)
+                            : "—"}
+
+                          {detailGanas && (
+                            <span className="block text-[10px] font-normal text-slate-400">
+                              {detailGanas.numerator} /{" "}
+                              {detailGanas.denominator}
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -394,7 +474,8 @@ export default function Results({ result, onGoClassify }) {
           <section className="rounded-2xl border border-slate-200 bg-slate-900 p-6 text-white shadow-md">
             <div className="mb-4 border-b border-slate-800 pb-3 flex items-center justify-between">
               <h4 className="font-bold text-teal-400 text-base">
-                3. Perhitungan Posterior Likelihood Product & Hasil Akhir (V_map)
+                3. Perhitungan Posterior Likelihood Product & Hasil Akhir
+                (V_map)
               </h4>
               <span className="text-xs font-mono text-slate-400">
                 V_map = arg max P(V_j) × ∏ P(a_i | V_j)
@@ -406,27 +487,31 @@ export default function Results({ result, onGoClassify }) {
                 <p className="text-slate-300 font-sans font-semibold border-b border-slate-700 pb-1">
                   Perkalian Kumulatif Likelihood & Prior:
                 </p>
-                
-                <div className="space-y-2">
-                  <div>
-                    <span className="text-teal-400">P(Jinak) × ∏ P(a_i | Jinak):</span>
-                    <p className="text-sm font-bold text-slate-100 mt-0.5 break-all">
-                      {calc.prior?.jinak?.toFixed(4)} × {Object.values(calc.likelihood?.jinak || {}).map(v => v.toFixed(4)).join(" × ")}
-                    </p>
-                    <p className="text-teal-300 text-sm mt-1 font-extrabold">
-                      = {calc.posteriorRaw?.jinak?.toExponential(8)}
-                    </p>
-                  </div>
 
-                  <div className="pt-2 border-t border-slate-700/60">
-                    <span className="text-rose-400">P(Ganas) × ∏ P(a_i | Ganas):</span>
-                    <p className="text-sm font-bold text-slate-100 mt-0.5 break-all">
-                      {calc.prior?.ganas?.toFixed(4)} × {Object.values(calc.likelihood?.ganas || {}).map(v => v.toFixed(4)).join(" × ")}
-                    </p>
-                    <p className="text-rose-300 text-sm mt-1 font-extrabold">
-                      = {calc.posteriorRaw?.ganas?.toExponential(8)}
-                    </p>
-                  </div>
+                <div className="space-y-2">
+                  {/* BENIGN */}
+                  <p className="text-sm font-bold text-slate-100 mt-0.5 break-all">
+                    {calc.prior?.jinak?.toPrecision(12)} ×{" "}
+                    {Object.values(calc.likelihood?.jinak || {})
+                      .map((v) => Number(v).toPrecision(12))
+                      .join(" × ")}
+                  </p>
+
+                  <p className="text-teal-300 text-sm mt-1 font-extrabold">
+                    = {calc.posteriorRaw?.jinak?.toExponential(12)}
+                  </p>
+
+                  {/* MALIGNANT */}
+                  <p className="text-sm font-bold text-slate-100 mt-0.5 break-all">
+                    {calc.prior?.ganas?.toPrecision(12)} ×{" "}
+                    {Object.values(calc.likelihood?.ganas || {})
+                      .map((v) => Number(v).toPrecision(12))
+                      .join(" × ")}
+                  </p>
+
+                  <p className="text-rose-300 text-sm mt-1 font-extrabold">
+                    = {calc.posteriorRaw?.ganas?.toExponential(12)}
+                  </p>
                 </div>
               </div>
 
@@ -436,12 +521,34 @@ export default function Results({ result, onGoClassify }) {
                   Keputusan Klasifikasi Akhir:
                 </span>
                 <p className="text-sm leading-relaxed text-slate-200">
-                  Karena nilai <code className="font-mono text-teal-300">V_map ({result.prediction === "Malignant" ? "Ganas" : "Jinak"})</code>{" "}
-                  <strong>({(result.prediction === "Malignant" ? calc.posteriorRaw?.ganas : calc.posteriorRaw?.jinak)?.toExponential(6)})</strong>{" "}
+                  Karena nilai{" "}
+                  <code className="font-mono text-teal-300">
+                    V_map (
+                    {result.prediction === "Malignant" ? "Ganas" : "Jinak"})
+                  </code>{" "}
+                  <strong>
+                    (
+                    {(result.prediction === "Malignant"
+                      ? calc.posteriorRaw?.ganas
+                      : calc.posteriorRaw?.jinak
+                    )?.toExponential(6)}
+                    )
+                  </strong>{" "}
                   lebih besar daripada{" "}
-                  <code className="font-mono text-slate-400">V_map ({result.prediction === "Malignant" ? "Jinak" : "Ganas"})</code>{" "}
-                  <strong>({(result.prediction === "Malignant" ? calc.posteriorRaw?.jinak : calc.posteriorRaw?.ganas)?.toExponential(6)})</strong>,
-                  maka sistem secara sah mengklasifikasikan data ini ke dalam kelas <strong>{result.prediction.toUpperCase()}</strong>.
+                  <code className="font-mono text-slate-400">
+                    V_map (
+                    {result.prediction === "Malignant" ? "Jinak" : "Ganas"})
+                  </code>{" "}
+                  <strong>
+                    (
+                    {(result.prediction === "Malignant"
+                      ? calc.posteriorRaw?.jinak
+                      : calc.posteriorRaw?.ganas
+                    )?.toExponential(6)}
+                    )
+                  </strong>
+                  , maka sistem secara sah mengklasifikasikan data ini ke dalam
+                  kelas <strong>{result.prediction.toUpperCase()}</strong>.
                 </p>
               </div>
             </div>
@@ -455,8 +562,12 @@ export default function Results({ result, onGoClassify }) {
         <div className="text-xs leading-6 text-amber-900 space-y-1">
           <p className="font-bold">Catatan Disclaimer Akademis:</p>
           <p>
-            Hasil dan simulasi perhitungan di atas sepenuhnya ditujukan untuk kepentingan akademik dan demonstrasi ilmiah algoritma 
-            <i> Naïve Bayes Classifier</i> berbasis dataset <i>Breast Cancer Wisconsin (Original)</i>. Hasil ini tidak dapat digunakan sebagai acuan diagnosis medis langsung tanpa verifikasi laboratorium medis resmi.
+            Hasil dan simulasi perhitungan di atas sepenuhnya ditujukan untuk
+            kepentingan akademik dan demonstrasi ilmiah algoritma
+            <i> Naïve Bayes Classifier</i> berbasis dataset{" "}
+            <i>Breast Cancer Wisconsin (Original)</i>. Hasil ini tidak dapat
+            digunakan sebagai acuan diagnosis medis langsung tanpa verifikasi
+            laboratorium medis resmi.
           </p>
         </div>
       </div>

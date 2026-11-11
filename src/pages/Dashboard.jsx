@@ -14,11 +14,23 @@ import {
 
 import StatCard from "../components/StatCard";
 
-// Dataset Wisconsin Diagnostic (569 records, 30 features)
+// Wisconsin Breast Cancer Original Dataset
 const UCI_DATASET_URL =
-  "/api-uci/ml/machine-learning-databases/breast-cancer-wisconsin/wdbc.data";
+  "/api-uci/ml/machine-learning-databases/breast-cancer-wisconsin/breast-cancer-wisconsin.data";
 
-// Membaca dataset CSV tanpa header
+const FEATURE_NAMES = [
+  "Clump Thickness",
+  "Uniformity of Cell Size",
+  "Uniformity of Cell Shape",
+  "Marginal Adhesion",
+  "Single Epithelial Cell Size",
+  "Bare Nuclei",
+  "Bland Chromatin",
+  "Normal Nucleoli",
+  "Mitoses",
+];
+
+// Parse dataset Wisconsin Original
 function parseDataset(rawText) {
   const lines = rawText
     .replace(/^\uFEFF/, "")
@@ -29,62 +41,89 @@ function parseDataset(rawText) {
   let missingValues = 0;
   let invalidRows = 0;
 
+  const missingByFeature = Object.fromEntries(
+    FEATURE_NAMES.map((name) => [name, 0]),
+  );
+
   lines.forEach((line) => {
     const columns = line.split(",").map((value) => value.trim());
 
-    // WDBC memiliki 32 kolom:
-    // ID + Diagnosis + 30 Features
-    if (columns.length !== 32) {
+    // Original dataset memiliki 11 kolom:
+    // ID + 9 Attributes + Class
+    if (columns.length !== 11) {
       invalidRows++;
       return;
     }
 
     const id = columns[0];
-    const diagnosis = columns[1].toUpperCase();
-    const featureValues = columns.slice(2);
+    const featureValues = columns.slice(1, 10);
+    const diagnosis = columns[10];
 
-    if (!id || !["B", "M"].includes(diagnosis)) {
+    if (!id || !["2", "4"].includes(diagnosis)) {
       invalidRows++;
       return;
     }
 
-    const missing = featureValues.filter(
-      (value) => value === "" || value === "?",
-    ).length;
+    let rowMissing = 0;
+    const parsedFeatures = [];
+    const rowMissingByFeature = {};
 
-    missingValues += missing;
+    let invalidFeature = false;
 
-    const validFeatures = featureValues.every(
-      (value) =>
-        value !== "" && value !== "?" && Number.isFinite(Number(value)),
-    );
+    featureValues.forEach((value, index) => {
+      if (value === "" || value === "?") {
+        parsedFeatures.push(null);
+        rowMissing++;
+        rowMissingByFeature[FEATURE_NAMES[index]] = 1;
+      } else {
+        const number = Number(value);
 
-    if (!validFeatures) {
+        if (!Number.isFinite(number)) {
+          invalidFeature = true;
+        }
+
+        parsedFeatures.push(number);
+      }
+    });
+
+    if (invalidFeature) {
       invalidRows++;
       return;
     }
+
+    // Missing values tidak menghapus record.
+    // Semua 699 record tetap dipertahankan.
+    missingValues += rowMissing;
+
+    Object.entries(rowMissingByFeature).forEach(([name, count]) => {
+      missingByFeature[name] += count;
+    });
 
     records.push({
       id,
-      diagnosis,
-      features: featureValues.map(Number),
+      features: parsedFeatures,
+      diagnosis: Number(diagnosis),
     });
   });
 
-  const benign = records.filter((record) => record.diagnosis === "B").length;
+  const benign = records.filter((record) => record.diagnosis === 2).length;
 
-  const malignant = records.filter((record) => record.diagnosis === "M").length;
+  const malignant = records.filter((record) => record.diagnosis === 4).length;
+
+  const totalRecords = records.length;
 
   return {
-    totalRecords: records.length,
-    totalFeatures: 30,
+    totalRecords,
+    totalFeatures: FEATURE_NAMES.length,
     benign,
     malignant,
     missingValues,
+    missingByFeature,
     invalidRows,
-    benignPercent: records.length > 0 ? (benign / records.length) * 100 : 0,
-    malignantPercent:
-      records.length > 0 ? (malignant / records.length) * 100 : 0,
+
+    benignPercent: totalRecords > 0 ? (benign / totalRecords) * 100 : 0,
+
+    malignantPercent: totalRecords > 0 ? (malignant / totalRecords) * 100 : 0,
   };
 }
 
@@ -114,17 +153,19 @@ export default function Dashboard({ setActive }) {
         const rawText = await response.text();
         const result = parseDataset(rawText);
 
-        // Validasi struktur dataset
+        // Validasi Wisconsin Original Dataset
         if (
-          result.totalRecords !== 569 ||
-          result.benign !== 357 ||
-          result.malignant !== 212 ||
+          result.totalRecords !== 699 ||
+          result.benign !== 458 ||
+          result.malignant !== 241 ||
+          result.missingValues !== 16 ||
           result.invalidRows !== 0
         ) {
           throw new Error(
             `Validasi dataset gagal. Records: ${result.totalRecords}, ` +
               `Benign: ${result.benign}, ` +
               `Malignant: ${result.malignant}, ` +
+              `Missing: ${result.missingValues}, ` +
               `Invalid: ${result.invalidRows}.`,
           );
         }
@@ -166,8 +207,8 @@ export default function Dashboard({ setActive }) {
 
           <p className="mt-4 max-w-xl text-sm leading-7 text-slate-300">
             Eksplorasi dan klasifikasi karakteristik inti sel kanker payudara
-            menggunakan Wisconsin Breast Cancer Diagnostic Dataset dan metode
-            Naive Bayes.
+            menggunakan Wisconsin Breast Cancer Original Dataset dengan sembilan
+            atribut prediktor dan metode Naive Bayes.
           </p>
 
           <button
@@ -221,7 +262,7 @@ export default function Dashboard({ setActive }) {
             <h3 className="font-bold text-slate-800">Dataset Overview</h3>
 
             <p className="mt-1 text-xs text-slate-400">
-              Wisconsin Breast Cancer Diagnostic
+              Wisconsin Breast Cancer Original
             </p>
           </div>
 
@@ -240,7 +281,7 @@ export default function Dashboard({ setActive }) {
             value={
               loading ? "..." : stats ? formatNumber(stats.totalRecords) : "-"
             }
-            note="Verified dataset records"
+            note="Original dataset records"
             icon={Database}
             color="bg-blue-50 text-blue-600"
           />
@@ -259,16 +300,6 @@ export default function Dashboard({ setActive }) {
             note="Benign and Malignant"
             icon={Activity}
             color="bg-violet-50 text-violet-600"
-          />
-
-          <StatCard
-            title="Missing Values"
-            value={
-              loading ? "..." : stats ? formatNumber(stats.missingValues) : "-"
-            }
-            note="Missing feature values"
-            icon={AlertCircle}
-            color="bg-amber-50 text-amber-600"
           />
         </div>
       </section>
@@ -292,7 +323,7 @@ export default function Dashboard({ setActive }) {
               {/* BENIGN */}
               <div>
                 <div className="mb-2 flex justify-between text-sm">
-                  <span className="font-medium text-slate-700">Benign (B)</span>
+                  <span className="font-medium text-slate-700">Benign (2)</span>
 
                   <span className="font-bold text-teal-700">
                     {formatNumber(stats.benign)} ·{" "}
@@ -314,7 +345,7 @@ export default function Dashboard({ setActive }) {
               <div>
                 <div className="mb-2 flex justify-between text-sm">
                   <span className="font-medium text-slate-700">
-                    Malignant (M)
+                    Malignant (4)
                   </span>
 
                   <span className="font-bold text-rose-600">
@@ -340,8 +371,9 @@ export default function Dashboard({ setActive }) {
           )}
 
           <div className="mt-7 rounded-xl bg-slate-50 p-4 text-xs leading-6 text-slate-500">
-            Distribusi dihitung langsung dari kolom Diagnosis pada dataset. B
-            menunjukkan Benign dan M menunjukkan Malignant.
+            Distribusi dihitung langsung dari kolom Class pada dataset. Kode 2
+            menunjukkan Benign (Jinak), sedangkan kode 4 menunjukkan Malignant
+            (Ganas).
           </div>
         </div>
 
@@ -356,23 +388,20 @@ export default function Dashboard({ setActive }) {
           <div className="space-y-4 text-sm">
             <div>
               <p className="text-xs text-slate-400">Dataset</p>
-
               <p className="mt-1 font-medium text-slate-700">
-                Breast Cancer Wisconsin (Diagnostic)
+                Breast Cancer Wisconsin (Original)
               </p>
             </div>
 
             <div>
               <p className="text-xs text-slate-400">Data Source</p>
-
               <p className="mt-1 font-medium text-slate-700">
-                University of Wisconsin
+                University of Wisconsin Hospitals
               </p>
             </div>
 
             <div>
               <p className="text-xs text-slate-400">Repository</p>
-
               <p className="mt-1 font-medium text-slate-700">
                 UCI Machine Learning Repository
               </p>
@@ -380,12 +409,11 @@ export default function Dashboard({ setActive }) {
 
             <div>
               <p className="text-xs text-slate-400">Classification Method</p>
-
               <p className="mt-1 font-medium text-slate-700">Naive Bayes</p>
             </div>
 
             <a
-              href="https://archive.ics.uci.edu/dataset/17/breast+cancer+wisconsin+diagnostic"
+              href="https://archive.ics.uci.edu/dataset/15/breast+cancer+wisconsin+original"
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-2 pt-2 text-xs font-semibold text-teal-700 hover:text-teal-900"
@@ -417,9 +445,10 @@ export default function Dashboard({ setActive }) {
 
             <p className="mt-1 text-xs leading-6 text-teal-800">
               {formatNumber(stats.totalRecords)} records berhasil dibaca,
-              terdiri dari {stats.benign} Benign dan {stats.malignant} Malignant
-              dengan {stats.totalFeatures} fitur dan {stats.missingValues}{" "}
-              missing values.
+              terdiri dari {stats.benign} Benign dan {stats.malignant}{" "}
+              Malignant, dengan {stats.totalFeatures} fitur dan{" "}
+              {stats.missingValues} missing values pada atribut Bare Nuclei.
+              Seluruh record tetap dipertahankan.
             </p>
           </div>
         </div>

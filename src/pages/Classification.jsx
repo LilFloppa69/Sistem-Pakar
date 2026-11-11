@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+
 import {
   ClipboardList,
   Activity,
@@ -16,7 +17,15 @@ import SectionTitle from "../components/SectionTitle";
 import FeatureInput from "../components/FeatureInput";
 import { features, initialForm } from "../data/featureInfo";
 
-const UCI_DATASET_URL = "/api-uci/ml/machine-learning-databases/breast-cancer-wisconsin/breast-cancer-wisconsin.data";
+// =====================================================
+// WISCONSIN BREAST CANCER ORIGINAL
+// =====================================================
+
+const UCI_DATASET_URL =
+  "/api-uci/ml/machine-learning-databases/breast-cancer-wisconsin/breast-cancer-wisconsin.data";
+
+// Cache baru agar tidak menggunakan cache model sebelumnya
+const CACHE_KEY = "cellscope_wbco_original_training_v3";
 
 const FEATURE_KEYS = [
   "clump",
@@ -30,118 +39,479 @@ const FEATURE_KEYS = [
   "mitoses",
 ];
 
-export default function Classification({ values, setValues, onViewDetails, onSaveHistory }) {
+const EXPECTED = {
+  raw: 699,
+  rawBenign: 458,
+  rawMalignant: 241,
+
+  clean: 683,
+  cleanBenign: 444,
+  cleanMalignant: 239,
+
+  missing: 16,
+
+  training: 546,
+  trainBenign: 355,
+  trainMalignant: 191,
+
+  testing: 137,
+  testBenign: 89,
+  testMalignant: 48,
+};
+
+// Zero-frequency estimation.
+// m=10 dan p=0.1 merupakan konfigurasi estimasi
+// untuk 10 kemungkinan kategori atribut (1-10).
+const ZERO_FREQ_M = 10;
+const ZERO_FREQ_P = 0.1;
+
+// =====================================================
+// SEEDED RANDOM SHUFFLE
+// =====================================================
+
+function mulberry32(seed) {
+  return function () {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function seededShuffle(items, seed) {
+  const result = [...items];
+  const random = mulberry32(seed);
+
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+
+  return result;
+}
+
+// =====================================================
+// PARSE ORIGINAL CSV
+// =====================================================
+
+function parseCSVData(rawText) {
+  const lines = rawText
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== "");
+
+  const records = [];
+
+  let missingValues = 0;
+  let missingRows = 0;
+  let invalidRows = 0;
+
+  let rawBenign = 0;
+  let rawMalignant = 0;
+
+  lines.forEach((line) => {
+    const cols = line.split(",").map((item) => item.trim());
+
+    if (cols.length !== 11) {
+      invalidRows++;
+      return;
+    }
+
+    const id = cols[0];
+    const classCode = Number(cols[10]);
+
+    if (!id || ![2, 4].includes(classCode)) {
+      invalidRows++;
+      return;
+    }
+
+    // Hitung distribusi kelas data mentah
+    if (classCode === 2) rawBenign++;
+    if (classCode === 4) rawMalignant++;
+
+    const parsedValues = [];
+    let rowHasMissing = false;
+    let rowInvalid = false;
+
+    cols.slice(1, 10).forEach((value) => {
+      if (value === "" || value === "?") {
+        parsedValues.push(null);
+        missingValues++;
+        rowHasMissing = true;
+        return;
+      }
+
+      const number = Number(value);
+
+      if (!Number.isInteger(number) || number < 1 || number > 10) {
+        rowInvalid = true;
+      }
+
+      parsedValues.push(number);
+    });
+
+    if (rowInvalid) {
+      invalidRows++;
+      return;
+    }
+
+    // Jangan masukkan record incomplete ke training/testing
+    if (rowHasMissing) {
+      missingRows++;
+      return;
+    }
+
+    const record = {
+      id,
+      target: classCode === 2 ? "Jinak" : "Ganas",
+    };
+
+    FEATURE_KEYS.forEach((key, index) => {
+      record[key] = parsedValues[index];
+    });
+
+    record.diagnosis = classCode;
+
+    records.push(record);
+  });
+
+  const cleanBenign = records.filter((record) => record.diagnosis === 2).length;
+
+  const cleanMalignant = records.filter(
+    (record) => record.diagnosis === 4,
+  ).length;
+
+  return {
+    records,
+
+    rawRecords: lines.length,
+
+    rawBenign,
+    rawMalignant,
+
+    cleanRecords: records.length,
+    cleanBenign,
+    cleanMalignant,
+
+    missingValues,
+    missingRows,
+
+    invalidRows,
+  };
+}
+
+// =====================================================
+// DATASET VALIDATION
+// =====================================================
+
+function validateDataset(data) {
+  return (
+    data &&
+    Array.isArray(data.records) &&
+    data.rawRecords === EXPECTED.raw &&
+    data.rawBenign === EXPECTED.rawBenign &&
+    data.rawMalignant === EXPECTED.rawMalignant &&
+    data.cleanRecords === EXPECTED.clean &&
+    data.cleanBenign === EXPECTED.cleanBenign &&
+    data.cleanMalignant === EXPECTED.cleanMalignant &&
+    data.missingValues === EXPECTED.missing &&
+    data.missingRows === EXPECTED.missing &&
+    data.invalidRows === 0
+  );
+}
+
+// =====================================================
+// LOCAL STORAGE CACHE
+// =====================================================
+
+function readCachedDataset() {
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+
+    if (!cached) return null;
+
+    const parsed = JSON.parse(cached);
+
+    return validateDataset(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedDataset(data) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+  } catch (error) {
+    console.warn("Dataset cache unavailable:", error);
+  }
+}
+
+// =====================================================
+// STRATIFIED 80:20 SPLIT
+// =====================================================
+
+function createStratifiedSplit(records) {
+  const benign = records.filter((record) => record.diagnosis === 2);
+
+  const malignant = records.filter((record) => record.diagnosis === 4);
+
+  // Pisahkan dan acak setiap kelas
+  const shuffledBenign = seededShuffle(benign, 42);
+  const shuffledMalignant = seededShuffle(malignant, 43);
+
+  // 80% training, 20% testing
+  const trainBenignCount = Math.floor(shuffledBenign.length * 0.8);
+
+  const trainMalignantCount = Math.floor(shuffledMalignant.length * 0.8);
+
+  const training = seededShuffle(
+    [
+      ...shuffledBenign.slice(0, trainBenignCount),
+      ...shuffledMalignant.slice(0, trainMalignantCount),
+    ],
+    44,
+  );
+
+  const testing = seededShuffle(
+    [
+      ...shuffledBenign.slice(trainBenignCount),
+      ...shuffledMalignant.slice(trainMalignantCount),
+    ],
+    45,
+  );
+
+  return {
+    training,
+    testing,
+
+    trainBenign: trainBenignCount,
+    trainMalignant: trainMalignantCount,
+
+    testBenign: benign.length - trainBenignCount,
+    testMalignant: malignant.length - trainMalignantCount,
+  };
+}
+
+// =====================================================
+// LIKELIHOOD CALCULATION
+// =====================================================
+
+function calculateLikelihood(frequency, classTotal) {
+  // Jika frekuensi positif, gunakan rumus jurnal
+  // P(Ai | Vj) = ni / jumlah kelas
+
+  if (frequency > 0) {
+    return {
+      frequency,
+
+      numerator: frequency,
+      denominator: classTotal,
+
+      probability: frequency / classTotal,
+
+      usedZeroEstimate: false,
+
+      formula: `${frequency}/${classTotal}`,
+    };
+  }
+
+  // Jika frekuensi nol, gunakan estimasi
+  // P(Ai | Vj) = (nc + mp) / (n + m)
+
+  const numerator = frequency + ZERO_FREQ_M * ZERO_FREQ_P;
+
+  const denominator = classTotal + ZERO_FREQ_M;
+
+  return {
+    frequency,
+
+    numerator,
+    denominator,
+
+    probability: numerator / denominator,
+
+    usedZeroEstimate: true,
+
+    m: ZERO_FREQ_M,
+    p: ZERO_FREQ_P,
+
+    formula:
+      `(${frequency} + ${ZERO_FREQ_M} × ${ZERO_FREQ_P}) / ` +
+      `(${classTotal} + ${ZERO_FREQ_M})`,
+  };
+}
+
+// =====================================================
+// CLASSIFICATION COMPONENT
+// =====================================================
+
+export default function Classification({
+  values,
+  setValues,
+  onViewDetails,
+  onSaveHistory,
+}) {
   const [notice, setNotice] = useState("");
+
+  const [reload, setReload] = useState(0);
+
   const [dbStatus, setDbStatus] = useState({
     loading: true,
     ready: false,
     message: "Memeriksa ketersediaan dataset...",
-    totalRecords: 0,
   });
-  const [dataset, setDataset] = useState([]);
+
+  const [trainingData, setTrainingData] = useState([]);
+  const [testingData, setTestingData] = useState([]);
+
   const [classificationResult, setClassificationResult] = useState(null);
 
-  const completed = features.filter(
-    (feature) => values[feature.key] !== ""
-  ).length;
+  // ===================================================
+  // INPUT COMPLETION
+  // ===================================================
+
+  const completed = features.filter((feature) => {
+    const value = values?.[feature.key];
+
+    return value !== "" && value !== null && value !== undefined;
+  }).length;
+
+  // ===================================================
+  // LOAD DATASET
+  // ===================================================
 
   useEffect(() => {
-    initDatabase();
-  }, []);
+    const controller = new AbortController();
 
-  const parseCSVData = (text) => {
-    const lines = text.trim().split("\n");
-    const parsed = [];
+    async function initDatabase() {
+      try {
+        setDbStatus({
+          loading: true,
+          ready: false,
+          message: "Memeriksa dataset Wisconsin Original...",
+        });
 
-    lines.forEach((line) => {
-      const cols = line.split(",").map((item) => item.trim());
-      if (cols.length === 11 && !line.includes("?")) {
-        const record = {
-          id: cols[0],
-          clump: parseInt(cols[1], 10),
-          cellSize: parseInt(cols[2], 10),
-          cellShape: parseInt(cols[3], 10),
-          adhesion: parseInt(cols[4], 10),
-          epithelial: parseInt(cols[5], 10),
-          bareNuclei: parseInt(cols[6], 10),
-          chromatin: parseInt(cols[7], 10),
-          nucleoli: parseInt(cols[8], 10),
-          mitoses: parseInt(cols[9], 10),
-          target: cols[10] === "4" ? "Ganas" : "Jinak",
-        };
-        parsed.push(record);
-      }
-    });
+        let parsedData = readCachedDataset();
+        let source = "Local Cache";
 
-    return parsed;
-  };
+        if (!parsedData) {
+          source = "UCI Repository";
 
-  const initDatabase = async () => {
-    try {
-      setDbStatus({
-        loading: true,
-        ready: false,
-        message: "Memeriksa ketersediaan database lokal...",
-        totalRecords: 0,
-      });
+          const response = await fetch(UCI_DATASET_URL, {
+            signal: controller.signal,
+            cache: "no-store",
+          });
 
-      const cachedData = localStorage.getItem("wbco_breast_cancer_db");
+          if (!response.ok) {
+            throw new Error(
+              `Gagal mengunduh dataset (HTTP ${response.status}).`,
+            );
+          }
 
-      if (cachedData) {
-        const parsed = JSON.parse(cachedData);
-        setDataset(parsed);
+          const rawText = await response.text();
+
+          parsedData = parseCSVData(rawText);
+
+          if (!validateDataset(parsedData)) {
+            throw new Error(
+              `Validasi dataset gagal. ` +
+                `Raw: ${parsedData.rawRecords}, ` +
+                `Clean: ${parsedData.cleanRecords}, ` +
+                `Benign: ${parsedData.cleanBenign}, ` +
+                `Malignant: ${parsedData.cleanMalignant}, ` +
+                `Missing: ${parsedData.missingValues}, ` +
+                `Invalid: ${parsedData.invalidRows}.`,
+            );
+          }
+
+          saveCachedDataset(parsedData);
+        }
+
+        const split = createStratifiedSplit(parsedData.records);
+
+        // Validasi hasil split
+        if (
+          split.training.length !== EXPECTED.training ||
+          split.testing.length !== EXPECTED.testing ||
+          split.trainBenign !== EXPECTED.trainBenign ||
+          split.trainMalignant !== EXPECTED.trainMalignant ||
+          split.testBenign !== EXPECTED.testBenign ||
+          split.testMalignant !== EXPECTED.testMalignant
+        ) {
+          throw new Error(
+            "Pembagian training/testing tidak sesuai konfigurasi jurnal.",
+          );
+        }
+
+        if (controller.signal.aborted) return;
+
+        setTrainingData(split.training);
+        setTestingData(split.testing);
+
         setDbStatus({
           loading: false,
           ready: true,
-          message: `Database ditemukan di penyimpanan lokal (${parsed.length} record).`,
-          totalRecords: parsed.length,
+
+          message: `Dataset berhasil dimuat dari ${source}.`,
+
+          source,
+
+          rawRecords: parsedData.rawRecords,
+          cleanRecords: parsedData.cleanRecords,
+          missingValues: parsedData.missingValues,
+
+          trainingRecords: split.training.length,
+          testingRecords: split.testing.length,
+
+          trainBenign: split.trainBenign,
+          trainMalignant: split.trainMalignant,
+
+          testBenign: split.testBenign,
+          testMalignant: split.testMalignant,
         });
-        return;
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          setTrainingData([]);
+          setTestingData([]);
+
+          setDbStatus({
+            loading: false,
+            ready: false,
+            message: `Error saat memuat dataset: ${err.message}`,
+          });
+        }
       }
-
-      setDbStatus({
-        loading: true,
-        ready: false,
-        message: "Database belum ada. Mengunduh dataset dari UCI Repository...",
-        totalRecords: 0,
-      });
-
-      const response = await fetch(UCI_DATASET_URL);
-      if (!response.ok) {
-        throw new Error(`Gagal mengunduh dataset (HTTP ${response.status})`);
-      }
-
-      const rawText = await response.text();
-      const parsedData = parseCSVData(rawText);
-
-      localStorage.setItem("wbco_breast_cancer_db", JSON.stringify(parsedData));
-      setDataset(parsedData);
-
-      setDbStatus({
-        loading: false,
-        ready: true,
-        message: `Dataset berhasil diunduh dan disimpan (${parsedData.length} record terverifikasi).`,
-        totalRecords: parsedData.length,
-      });
-    } catch (err) {
-      setDbStatus({
-        loading: false,
-        ready: false,
-        message: `Error saat memuat dataset: ${err.message}`,
-        totalRecords: 0,
-      });
     }
-  };
 
-  const calculateNaiveBayes = (inputValues) => {
-    if (!dataset || dataset.length === 0) return null;
+    initDatabase();
 
-    const dataJinak = dataset.filter((d) => d.target === "Jinak");
-    const dataGanas = dataset.filter((d) => d.target === "Ganas");
+    return () => controller.abort();
+  }, [reload]);
+
+  // ===================================================
+  // NAIVE BAYES CLASSIFIER
+  // ===================================================
+
+  function calculateNaiveBayes(inputValues) {
+    if (trainingData.length !== EXPECTED.training) {
+      return null;
+    }
+
+    const dataJinak = trainingData.filter(
+      (record) => record.target === "Jinak",
+    );
+
+    const dataGanas = trainingData.filter(
+      (record) => record.target === "Ganas",
+    );
 
     const totalJinak = dataJinak.length;
     const totalGanas = dataGanas.length;
-    const totalData = dataset.length;
+    const totalData = trainingData.length;
+
+    // STEP 1: PRIOR PROBABILITY
 
     const pJinakPrior = totalJinak / totalData;
     const pGanasPrior = totalGanas / totalData;
@@ -149,80 +519,177 @@ export default function Classification({ values, setValues, onViewDetails, onSav
     const probAtributJinak = {};
     const probAtributGanas = {};
 
+    const likelihoodDetails = {};
+
     let prodLikelihoodJinak = 1;
     let prodLikelihoodGanas = 1;
 
+    // STEP 2: LIKELIHOOD 9 ATTRIBUTES
+
     FEATURE_KEYS.forEach((key) => {
-      const val = parseInt(inputValues[key], 10);
+      const val = Number(inputValues[key]);
 
-      const countJinak = dataJinak.filter((d) => d[key] === val).length;
-      const countGanas = dataGanas.filter((d) => d[key] === val).length;
+      const countJinak = dataJinak.filter(
+        (record) => record[key] === val,
+      ).length;
 
-      let pAiJinak = countJinak / totalJinak;
-      if (countJinak === 0) {
-        pAiJinak = (0 + 1) / (totalJinak + 10);
-      }
+      const countGanas = dataGanas.filter(
+        (record) => record[key] === val,
+      ).length;
 
-      let pAiGanas = countGanas / totalGanas;
-      if (countGanas === 0) {
-        pAiGanas = (0 + 1) / (totalGanas + 10);
-      }
+      const detailJinak = calculateLikelihood(countJinak, totalJinak);
 
-      probAtributJinak[key] = pAiJinak;
-      probAtributGanas[key] = pAiGanas;
+      const detailGanas = calculateLikelihood(countGanas, totalGanas);
 
-      prodLikelihoodJinak *= pAiJinak;
-      prodLikelihoodGanas *= pAiGanas;
+      probAtributJinak[key] = detailJinak.probability;
+
+      probAtributGanas[key] = detailGanas.probability;
+
+      prodLikelihoodJinak *= detailJinak.probability;
+
+      prodLikelihoodGanas *= detailGanas.probability;
+
+      const feature = features.find((item) => item.key === key);
+
+      likelihoodDetails[key] = {
+        featureName: feature?.name || key,
+
+        inputValue: val,
+
+        jinak: detailJinak,
+        ganas: detailGanas,
+      };
     });
 
+    // STEP 3: RAW POSTERIOR
+
     const posteriorJinak = prodLikelihoodJinak * pJinakPrior;
+
     const posteriorGanas = prodLikelihoodGanas * pGanasPrior;
 
+    // STEP 4: NORMALIZATION
+
     const totalPosterior = posteriorJinak + posteriorGanas;
-    const benignPercent = totalPosterior > 0 ? (posteriorJinak / totalPosterior) * 100 : 0;
-    const malignantPercent = totalPosterior > 0 ? (posteriorGanas / totalPosterior) * 100 : 0;
+
+    const benignPercent =
+      totalPosterior > 0 ? (posteriorJinak / totalPosterior) * 100 : 0;
+
+    const malignantPercent =
+      totalPosterior > 0 ? (posteriorGanas / totalPosterior) * 100 : 0;
+
+    // STEP 5: CLASS DECISION
 
     const predictedClass = posteriorJinak >= posteriorGanas ? "Jinak" : "Ganas";
 
+    const normalizedInput = {};
+
+    FEATURE_KEYS.forEach((key) => {
+      normalizedInput[key] = Number(inputValues[key]);
+    });
+
+    // =================================================
+    // RESULT OBJECT
+    // =================================================
+
     return {
-      id: `WBCO-${Math.floor(100000 + Math.random() * 900000)}`,
+      id: `WBCO-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+
       createdAt: new Date().toLocaleString("id-ID", {
         dateStyle: "medium",
         timeStyle: "short",
       }),
+
       prediction: predictedClass === "Jinak" ? "Benign" : "Malignant",
+
       predictedClass,
+
       probabilities: {
         benign: benignPercent,
         malignant: malignantPercent,
       },
-      input: { ...inputValues },
+
+      input: normalizedInput,
+
       posterior: {
         jinak: posteriorJinak,
         ganas: posteriorGanas,
       },
+
+      datasetInfo: {
+        name: "Breast Cancer Wisconsin Original",
+
+        rawRecords: EXPECTED.raw,
+        completeRecords: EXPECTED.clean,
+        missingValues: EXPECTED.missing,
+
+        trainingRecords: EXPECTED.training,
+        testingRecords: EXPECTED.testing,
+
+        trainingBenign: EXPECTED.trainBenign,
+        trainingMalignant: EXPECTED.trainMalignant,
+
+        testingBenign: EXPECTED.testBenign,
+        testingMalignant: EXPECTED.testMalignant,
+
+        splitMethod: "Stratified 80:20",
+        randomSeed: 42,
+      },
+
       calculation: {
+        // PRIOR
         prior: {
           jinak: pJinakPrior,
           ganas: pGanasPrior,
+
           totalJinak,
           totalGanas,
           totalData,
+
+          numeratorJinak: totalJinak,
+          numeratorGanas: totalGanas,
+          denominator: totalData,
         },
+
+        // LIKELIHOOD
         likelihood: {
           jinak: probAtributJinak,
           ganas: probAtributGanas,
         },
+
+        // FREQUENCY + NUMERATOR + DENOMINATOR
+        likelihoodDetails,
+
+        // ZERO FREQUENCY ESTIMATION
+        zeroFrequencyEstimate: {
+          m: ZERO_FREQ_M,
+          p: ZERO_FREQ_P,
+        },
+
+        // POSTERIOR
         posteriorRaw: {
           jinak: posteriorJinak,
           ganas: posteriorGanas,
+
+          productLikelihoodJinak: prodLikelihoodJinak,
+
+          productLikelihoodGanas: prodLikelihoodGanas,
+        },
+
+        normalizedPosterior: {
+          jinak: benignPercent,
+          ganas: malignantPercent,
+          total: totalPosterior,
         },
       },
     };
-  };
+  }
+
+  // ===================================================
+  // HANDLE CLASSIFICATION
+  // ===================================================
 
   function handleClassify() {
-    if (completed !== features.length) {
+    if (completed !== 9) {
       setNotice("Silakan lengkapi seluruh 9 atribut terlebih dahulu.");
       return;
     }
@@ -232,21 +699,52 @@ export default function Classification({ values, setValues, onViewDetails, onSav
       return;
     }
 
-    const result = calculateNaiveBayes(values);
-    setClassificationResult(result);
-    setNotice("Klasifikasi Naïve Bayes berhasil dihitung dan disimpan!");
+    const invalidInput = FEATURE_KEYS.some((key) => {
+      const value = Number(values[key]);
 
-    // Simpan ke Local Storage & trigger callback parent
-    if (result && onSaveHistory) {
-      onSaveHistory(result);
+      return !Number.isInteger(value) || value < 1 || value > 10;
+    });
+
+    if (invalidInput) {
+      setNotice("Setiap atribut harus memiliki nilai antara 1 sampai 10.");
+      return;
+    }
+
+    try {
+      const result = calculateNaiveBayes(values);
+
+      if (!result) {
+        throw new Error("Hasil perhitungan tidak tersedia.");
+      }
+
+      setClassificationResult(result);
+
+      if (onSaveHistory) {
+        onSaveHistory(result);
+      }
+
+      setNotice("Klasifikasi Naïve Bayes berhasil dihitung dan disimpan!");
+    } catch (error) {
+      console.error("Classification error:", error);
+
+      setNotice(`Klasifikasi gagal: ${error.message}`);
     }
   }
 
+  // ===================================================
+  // RESET
+  // ===================================================
+
   function handleReset() {
     setValues({ ...initialForm });
+
     setNotice("");
     setClassificationResult(null);
   }
+
+  // ===================================================
+  // UI
+  // ===================================================
 
   return (
     <div>
@@ -256,8 +754,10 @@ export default function Classification({ values, setValues, onViewDetails, onSav
         desc="Masukkan sembilan karakteristik inti sel berdasarkan skala pengukuran Wisconsin Breast Cancer Original Dataset."
       />
 
+      {/* DATABASE STATUS */}
+
       <div
-        className={`mb-6 flex items-center justify-between rounded-xl border p-4 text-xs ${
+        className={`mb-6 rounded-xl border p-4 text-xs ${
           dbStatus.ready
             ? "border-emerald-200 bg-emerald-50 text-emerald-800"
             : dbStatus.loading
@@ -273,30 +773,66 @@ export default function Classification({ values, setValues, onViewDetails, onSav
           ) : (
             <AlertCircle className="text-rose-600" size={18} />
           )}
+
           <span className="font-medium">{dbStatus.message}</span>
         </div>
 
         {!dbStatus.ready && !dbStatus.loading && (
           <button
-            onClick={initDatabase}
-            className="rounded-lg bg-rose-600 px-3 py-1.5 font-semibold text-white transition hover:bg-rose-700"
+            onClick={() => setReload((value) => value + 1)}
+            className="mt-3 rounded-lg bg-rose-600 px-3 py-1.5 font-semibold text-white transition hover:bg-rose-700"
           >
             Coba Lagi
           </button>
         )}
+
+        {dbStatus.ready && (
+          <div className="mt-4 grid grid-cols-2 gap-3 border-t border-emerald-200 pt-3 sm:grid-cols-4">
+            {[
+              ["Raw Dataset", dbStatus.rawRecords],
+              ["Clean Dataset", dbStatus.cleanRecords],
+              ["Training", dbStatus.trainingRecords],
+              ["Testing", dbStatus.testingRecords],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <p className="text-emerald-600">{label}</p>
+                <p className="mt-1 font-bold">{value}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {dbStatus.ready && (
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-emerald-200 pt-3">
+            <span>
+              Training: {dbStatus.trainBenign} Benign +{" "}
+              {dbStatus.trainMalignant} Malignant
+            </span>
+
+            <span>
+              Testing: {dbStatus.testBenign} Benign + {dbStatus.testMalignant}{" "}
+              Malignant
+            </span>
+
+            <span>Missing: {dbStatus.missingValues}</span>
+          </div>
+        )}
       </div>
 
       <div className="grid items-start gap-6 xl:grid-cols-3">
-        {/* Input Form */}
+        {/* INPUT FORM */}
+
         <section className="rounded-2xl border border-slate-200 bg-white p-6 xl:col-span-2">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-5">
             <div>
               <div className="flex items-center gap-2">
                 <ClipboardList className="text-teal-600" size={20} />
+
                 <h3 className="font-bold text-slate-800">
                   Cell Characteristics
                 </h3>
               </div>
+
               <p className="mt-1 text-xs text-slate-400">
                 Pilih nilai untuk setiap atribut.
               </p>
@@ -310,7 +846,9 @@ export default function Classification({ values, setValues, onViewDetails, onSav
           <div className="mb-7 h-2 overflow-hidden rounded-full bg-slate-100">
             <div
               className="h-full rounded-full bg-teal-500 transition-all"
-              style={{ width: `${(completed / 9) * 100}%` }}
+              style={{
+                width: `${(completed / 9) * 100}%`,
+              }}
             />
           </div>
 
@@ -326,6 +864,7 @@ export default function Classification({ values, setValues, onViewDetails, onSav
                     ...old,
                     [feature.key]: value,
                   }));
+
                   setNotice("");
                   setClassificationResult(null);
                 }}
@@ -355,26 +894,31 @@ export default function Classification({ values, setValues, onViewDetails, onSav
           {notice && (
             <div
               className={`mt-5 flex items-start gap-2 rounded-xl p-4 text-xs leading-5 ${
-                completed === 9
+                classificationResult
                   ? "bg-teal-50 text-teal-800"
                   : "bg-amber-50 text-amber-800"
               }`}
             >
-              {completed === 9 ? (
+              {classificationResult ? (
                 <CheckCircle2 size={17} />
               ) : (
                 <Info size={17} />
               )}
+
               {notice}
             </div>
           )}
         </section>
 
-        {/* Summary & NBC Results */}
+        {/* INPUT SUMMARY & RESULTS */}
+
         <div className="space-y-5">
+          {/* INPUT SUMMARY */}
+
           <section className="rounded-2xl border border-slate-200 bg-white p-5">
             <div className="mb-5 flex items-center gap-2">
               <ClipboardList className="text-teal-600" size={19} />
+
               <h3 className="font-bold text-slate-800">Input Summary</h3>
             </div>
 
@@ -388,7 +932,9 @@ export default function Classification({ values, setValues, onViewDetails, onSav
 
                   <span
                     className={`font-bold ${
-                      values[feature.key] ? "text-teal-700" : "text-slate-300"
+                      values[feature.key] !== ""
+                        ? "text-teal-700"
+                        : "text-slate-300"
                     }`}
                   >
                     {values[feature.key] || "—"}
@@ -398,10 +944,12 @@ export default function Classification({ values, setValues, onViewDetails, onSav
             </div>
           </section>
 
-          {/* Status Hasil Klasifikasi */}
+          {/* CLASSIFICATION STATUS */}
+
           <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
             <div className="mb-3 flex items-center gap-2">
               <Activity className="text-teal-600" size={19} />
+
               <h3 className="font-bold text-slate-800">
                 Classification Status
               </h3>
@@ -410,39 +958,45 @@ export default function Classification({ values, setValues, onViewDetails, onSav
             {classificationResult ? (
               <div className="space-y-4 py-2">
                 <div
-                  className={`rounded-xl p-4 text-center border ${
+                  className={`rounded-xl border p-4 text-center ${
                     classificationResult.predictedClass === "Jinak"
                       ? "bg-emerald-50 border-emerald-200 text-emerald-900"
                       : "bg-rose-50 border-rose-200 text-rose-900"
                   }`}
                 >
                   <p className="text-xs font-semibold uppercase tracking-wider">
-                    Hasil Diagnosis
+                    Classification Prediction
                   </p>
+
                   <p className="mt-1 text-2xl font-black">
-                    KANKER {classificationResult.predictedClass.toUpperCase()}
+                    {classificationResult.prediction}
+                  </p>
+
+                  <p className="mt-1 text-xs">
+                    Prediksi kelas {classificationResult.predictedClass}
                   </p>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-4 text-xs space-y-2">
-                  <p className="font-bold text-slate-700 border-b pb-1">
-                    Probabilitas Posterior:
+                <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 text-xs">
+                  <p className="border-b pb-1 font-bold text-slate-700">
+                    Posterior Probability:
                   </p>
+
                   <div className="flex justify-between">
                     <span className="text-slate-500">P(Jinak | X):</span>
                     <span className="font-mono font-semibold text-emerald-700">
-                      {classificationResult.probabilities.benign.toFixed(2)}%
+                      {classificationResult.probabilities.benign.toFixed(6)}%
                     </span>
                   </div>
+
                   <div className="flex justify-between">
                     <span className="text-slate-500">P(Ganas | X):</span>
                     <span className="font-mono font-semibold text-rose-700">
-                      {classificationResult.probabilities.malignant.toFixed(2)}%
+                      {classificationResult.probabilities.malignant.toFixed(6)}%
                     </span>
                   </div>
                 </div>
 
-                {/* TOMBOL LIHAT DETAIL & PINDAH KE Halaman Analysis Result */}
                 <button
                   onClick={() =>
                     onViewDetails && onViewDetails(classificationResult)
@@ -464,13 +1018,25 @@ export default function Classification({ values, setValues, onViewDetails, onSav
                 </p>
 
                 <p className="mt-2 text-xs leading-5 text-slate-400">
-                  Isi 9 atribut sel di atas dan tekan tombol untuk memulai
+                  Isi sembilan atribut di atas dan tekan tombol untuk memulai
                   perhitungan Naïve Bayes.
                 </p>
               </div>
             )}
           </section>
         </div>
+      </div>
+
+      {/* MEDICAL DISCLAIMER */}
+
+      <div className="mt-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+        <Info className="mt-0.5 shrink-0 text-amber-600" size={18} />
+
+        <p className="text-xs leading-6 text-amber-800">
+          Aplikasi ini dibuat untuk tujuan akademik dan pembelajaran. Hasil
+          klasifikasi merupakan prediksi model Naïve Bayes, bukan diagnosis
+          medis dan tidak menggantikan pemeriksaan tenaga medis profesional.
+        </p>
       </div>
     </div>
   );
