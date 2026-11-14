@@ -14,14 +14,14 @@ import {
 const teamMembers = [
   {
     name: "Yazid Chairy Syahputra Nasution",
-    role: "Project Leader/Frontend Developer",
+    role: "Project Leader/Frontend Developer/Machine Learning Engineer",
     image: null,
     initials: "YN",
     nirm: "2026020111",
   },
   {
     name: "Achmad Hadi Rasyid",
-    role: "Machine Learning Engineer/ Human :)",
+    role: "Machine Learning Engineer/ Human :)/Frontend Developer",
     image: null,
     initials: "SHIO",
     nirm: "2026020166",
